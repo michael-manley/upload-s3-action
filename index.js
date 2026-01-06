@@ -25,6 +25,9 @@ const DESTINATION_DIR = core.getInput('destination_dir', {
 const ENDPOINT = core.getInput('endpoint', {
   required: false,
 });
+const USEPATHSTYLE = core.getInput('use_path_style_requests', {
+  required: false,
+});
 
 const s3options = {
   accessKeyId: AWS_KEY_ID,
@@ -35,6 +38,10 @@ if (ENDPOINT) {
   s3options.endpoint = ENDPOINT;
 }
 
+if (USEPATHSTYLE.toLowerCase() === "true") {
+  s3options.forcePathStyle = true;
+}
+
 const s3 = new S3(s3options);
 const destinationDir = DESTINATION_DIR === '/' ? shortid() : DESTINATION_DIR;
 const paths = klawSync(SOURCE_DIR, {
@@ -43,6 +50,8 @@ const paths = klawSync(SOURCE_DIR, {
 
 function upload(params) {
   return new Promise((resolve) => {
+    // S3 ManagedUpload with callbacks is not supported in AWS SDK for JavaScript (v3).
+    // Please convert to 'await client.upload(params, options).promise()', and re-run aws-sdk-js-codemod.
     s3.upload(params, (err, data) => {
       if (err) core.error(err);
       core.info(`uploaded - ${data.Key}`);
