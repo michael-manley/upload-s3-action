@@ -1,5 +1,5 @@
 const core = require('@actions/core');
-const S3 = require('aws-sdk/clients/s3');
+const S3 = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const path = require('path');
 const shortid = require('shortid');
