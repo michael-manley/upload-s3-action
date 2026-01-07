@@ -25,6 +25,9 @@ const DESTINATION_DIR = core.getInput('destination_dir', {
 const ENDPOINT = core.getInput('endpoint', {
   required: false,
 });
+const USEPATHSTYLE = core.getInput('use_path_style_requests', {
+  required: false,
+});
 
 const s3options = {
   accessKeyId: AWS_KEY_ID,
@@ -33,6 +36,10 @@ const s3options = {
 
 if (ENDPOINT) {
   s3options.endpoint = ENDPOINT;
+}
+
+if (USEPATHSTYLE.toLowerCase() === 'true') {
+  s3options.s3ForcePathStyle = true;
 }
 
 const s3 = new S3(s3options);
