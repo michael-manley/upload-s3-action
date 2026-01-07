@@ -56456,7 +56456,7 @@ module.exports = /*#__PURE__*/JSON.parse('{"application/1d-interleaved-parityfec
 /************************************************************************/
 var __webpack_exports__ = {};
 const core = __nccwpck_require__(7484);
-const S3 = __nccwpck_require__(3711);
+const { S3Client, PutObjectCommand } = __nccwpck_require__(3711);
 const fs = __nccwpck_require__(9896);
 const path = __nccwpck_require__(6928);
 const shortid = __nccwpck_require__(7887);
@@ -56464,68 +56464,78 @@ const slash = (__nccwpck_require__(9420)/* ["default"] */ .A);
 const klawSync = __nccwpck_require__(1628);
 const { lookup } = __nccwpck_require__(4096);
 
-const AWS_KEY_ID = core.getInput('aws_key_id', {
-  required: true,
-});
+const AWS_KEY_ID = core.getInput('aws_key_id', { required: true });
 const SECRET_ACCESS_KEY = core.getInput('aws_secret_access_key', {
   required: true,
 });
-const BUCKET = core.getInput('aws_bucket', {
-  required: true,
-});
-const SOURCE_DIR = core.getInput('source_dir', {
-  required: true,
-});
-const DESTINATION_DIR = core.getInput('destination_dir', {
-  required: false,
-});
-const ENDPOINT = core.getInput('endpoint', {
-  required: false,
-});
+const BUCKET = core.getInput('aws_bucket', { required: true });
+const SOURCE_DIR = core.getInput('source_dir', { required: true });
+const DESTINATION_DIR = core.getInput('destination_dir', { required: false });
+const ENDPOINT = core.getInput('endpoint', { required: false });
 const USEPATHSTYLE = core.getInput('use_path_style_requests', {
   required: false,
 });
 
 const s3options = {
-  accessKeyId: AWS_KEY_ID,
-  secretAccessKey: SECRET_ACCESS_KEY,
+  credentials: {
+    accessKeyId: AWS_KEY_ID,
+    secretAccessKey: SECRET_ACCESS_KEY,
+  },
 };
 
 if (ENDPOINT) {
   s3options.endpoint = ENDPOINT;
 }
-
-if (USEPATHSTYLE.toLowerCase() === "true") {
+if ((USEPATHSTYLE || '').toLowerCase() === 'true') {
   s3options.forcePathStyle = true;
 }
 
-const s3 = new S3(s3options);
-const destinationDir = DESTINATION_DIR === '/' ? shortid() : DESTINATION_DIR;
-const paths = klawSync(SOURCE_DIR, {
-  nodir: true,
-});
+const s3 = new S3Client(s3options);
 
-function upload(params) {
-  return new Promise((resolve) => {
-    // S3 ManagedUpload with callbacks is not supported in AWS SDK for JavaScript (v3).
-    // Please convert to 'await client.upload(params, options).promise()', and re-run aws-sdk-js-codemod.
-    s3.upload(params, (err, data) => {
-      if (err) core.error(err);
-      core.info(`uploaded - ${data.Key}`);
-      core.info(`located - ${data.Location}`);
-      resolve(data.Location);
-    });
-  });
+const destinationDir =
+  DESTINATION_DIR === '/' ? shortid() : DESTINATION_DIR || '';
+const paths = klawSync(SOURCE_DIR, { nodir: true });
+
+function buildPublicUrl({ endpoint, bucket, key, forcePathStyle }) {
+  // Best-effort “Location” equivalent. For AWS S3 this is usually correct.
+  // For custom endpoints, this matches the common patterns.
+  if (!endpoint) return `https://${bucket}.s3.amazonaws.com/${encodeURI(key)}`;
+
+  const url = new URL(endpoint);
+  if (forcePathStyle) {
+    // https://endpoint/bucket/key
+    return `${url.origin}/${bucket}/${encodeURI(key)}`;
+  }
+  // https://bucket.endpoint/key
+  return `${url.protocol}//${bucket}.${url.host}/${encodeURI(key)}`;
 }
 
-function run() {
+async function uploadObject(params) {
+  await s3.send(new PutObjectCommand(params));
+  core.info(`uploaded - ${params.Key}`);
+
+  const location = buildPublicUrl({
+    endpoint: ENDPOINT,
+    bucket: params.Bucket,
+    key: params.Key,
+    forcePathStyle: s3options.forcePathStyle === true,
+  });
+
+  core.info(`located - ${location}`);
+  return location;
+}
+
+async function run() {
   const sourceDir = slash(path.join(process.cwd(), SOURCE_DIR));
-  return Promise.all(
+
+  return await Promise.all(
     paths.map((p) => {
       const fileStream = fs.createReadStream(p.path);
+
       const bucketPath = slash(
-        path.join(destinationDir, slash(path.relative(sourceDir, p.path)))
+        path.join(destinationDir, slash(path.relative(sourceDir, p.path))),
       );
+
       const params = {
         Bucket: BUCKET,
         ACL: 'public-read',
@@ -56533,8 +56543,9 @@ function run() {
         Key: bucketPath,
         ContentType: lookup(p.path) || 'text/plain',
       };
-      return upload(params);
-    })
+
+      return uploadObject(params);
+    }),
   );
 }
 
@@ -56547,7 +56558,7 @@ run()
   })
   .catch((err) => {
     core.error(err);
-    core.setFailed(err.message);
+    core.setFailed(err?.message || String(err));
   });
 
 module.exports = __webpack_exports__;
