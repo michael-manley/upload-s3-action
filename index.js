@@ -26,6 +26,8 @@ const s3options = {
     secretAccessKey: SECRET_ACCESS_KEY,
   },
   region: REGION,
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
 };
 
 if (ENDPOINT) {
@@ -41,67 +43,42 @@ const destinationDir =
   DESTINATION_DIR === '/' ? shortid() : DESTINATION_DIR || '';
 const paths = klawSync(SOURCE_DIR, { nodir: true });
 
-function buildPublicUrl({ endpoint, bucket, key, forcePathStyle }) {
-  // Best-effort “Location” equivalent. For AWS S3 this is usually correct.
-  // For custom endpoints, this matches the common patterns.
-  if (!endpoint) return `https://${bucket}.s3.amazonaws.com/${encodeURI(key)}`;
-
-  const url = new URL(endpoint);
-  if (forcePathStyle) {
-    // https://endpoint/bucket/key
-    return `${url.origin}/${bucket}/${encodeURI(key)}`;
-  }
-  // https://bucket.endpoint/key
-  return `${url.protocol}//${bucket}.${url.host}/${encodeURI(key)}`;
-}
-
 async function uploadObject(params) {
   await s3.send(new PutObjectCommand(params));
   core.info(`uploaded - ${params.Key}`);
-
-  const location = buildPublicUrl({
-    endpoint: ENDPOINT,
-    bucket: params.Bucket,
-    key: params.Key,
-    forcePathStyle: s3options.forcePathStyle === true,
-  });
-
-  core.info(`located - ${location}`);
-  return location;
+  return params.Key;
 }
 
 async function run() {
   const sourceDir = slash(path.join(process.cwd(), SOURCE_DIR));
 
-  return await Promise.all(
+  return Promise.all(
     paths.map((p) => {
       const fileStream = fs.createReadStream(p.path);
 
-      const bucketPath = slash(
-        path.join(destinationDir, slash(path.relative(sourceDir, p.path))),
+      const key = slash(
+        path.join(destinationDir, path.relative(sourceDir, p.path)),
       );
 
-      const params = {
+      return uploadObject({
         Bucket: BUCKET,
-        ACL: 'public-read',
         Body: fileStream,
-        Key: bucketPath,
-        ContentType: lookup(p.path) || 'text/plain',
-      };
-
-      return uploadObject(params);
+        Key: key,
+        ContentType: lookup(p.path) || 'application/octet-stream',
+      });
     }),
   );
 }
 
 run()
-  .then((locations) => {
-    core.info(`object key - ${destinationDir}`);
-    core.info(`object locations - ${locations}`);
+  .then((keys) => {
+    core.info(`object key prefix - ${destinationDir}`);
+    core.info(`uploaded objects - ${keys.join(', ')}`);
     core.setOutput('object_key', destinationDir);
-    core.setOutput('object_locations', locations);
+    core.setOutput('object_keys', keys);
   })
   .catch((err) => {
     core.error(err);
     core.setFailed(err?.message || String(err));
   });
+
