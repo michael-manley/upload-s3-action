@@ -26,9 +26,13 @@ inputs:
     description: 'endpoint URI to send requests'
   use_path_style_requests:
     description: 'use path style requests to s3'
-    required: true
+    required: false
     type: boolean
     default: false
+  region:
+    description: 'AWS Region'
+    default: 'us-east-1'
+    required: false
 outputs:
   object_key:
     description: 'object key'
