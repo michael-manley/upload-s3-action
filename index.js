@@ -32,6 +32,7 @@ const USEPATHSTYLE = core.getInput('use_path_style_requests', {
 const s3options = {
   accessKeyId: AWS_KEY_ID,
   secretAccessKey: SECRET_ACCESS_KEY,
+  signatureVersion: 'v2',
 };
 
 if (ENDPOINT) {
